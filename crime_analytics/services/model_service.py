@@ -56,8 +56,16 @@ def train_and_save(bundle: DataBundle, model_dir: str = "models") -> TrainResult
         ]
     )
 
+    class_counts = y_cls.value_counts(dropna=False)
+    can_stratify = (class_counts >= 2).all() and class_counts.size > 1
+
     X_train, X_test, y_train_reg, y_test_reg, y_train_cls, y_test_cls = train_test_split(
-        X, y_reg, y_cls, test_size=0.2, random_state=42
+        X,
+        y_reg,
+        y_cls,
+        test_size=0.2,
+        random_state=42,
+        stratify=y_cls if can_stratify else None,
     )
 
     reg_model.fit(X_train, y_train_reg)
@@ -84,7 +92,12 @@ def train_and_save(bundle: DataBundle, model_dir: str = "models") -> TrainResult
         "features": ["state", "year", "prev_year_crime_rate", "population"],
         "target_regression": "crime_rate",
         "target_classification": "crime_risk_category",
-        "classification_report": classification_report(y_test_cls, cls_pred, output_dict=True),
+        "classification_report": classification_report(
+            y_test_cls,
+            cls_pred,
+            output_dict=True,
+            zero_division=0,
+        ),
         "metrics": {
             "mae": mae,
             "r2": r2,

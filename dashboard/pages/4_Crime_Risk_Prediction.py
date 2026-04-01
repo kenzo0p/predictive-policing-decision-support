@@ -18,6 +18,17 @@ def confidence_badge(confidence: float) -> tuple[str, str, str]:
         return "Moderate Confidence", "#78350f", "#fef3c7"
     return "Low Confidence", "#7f1d1d", "#fecaca"
 
+
+def render_class_probabilities(class_probabilities: dict[str, float], predicted_label: str) -> None:
+    sorted_probs = sorted(class_probabilities.items(), key=lambda item: item[1], reverse=True)
+
+    for label, prob in sorted_probs:
+        label_col, bar_col, value_col = st.columns([2, 7, 2])
+        label_text = f"**{label}**" if label == predicted_label else label
+        label_col.markdown(label_text)
+        bar_col.progress(float(prob))
+        value_col.markdown(f"**{prob:.2%}**")
+
 st.set_page_config(page_title="Crime Risk Prediction", page_icon="🤖", layout="wide")
 
 st.title("Crime Risk Prediction")
@@ -70,7 +81,10 @@ if st.button("Predict risk"):
         st.success("Prediction confidence is above the uncertainty threshold.")
 
     st.subheader("Class Probabilities")
-    st.json(result["class_probabilities"])
+    render_class_probabilities(
+        class_probabilities=result["class_probabilities"],
+        predicted_label=result["predicted_risk_category"],
+    )
 
 st.subheader("Model Performance Snapshot")
 metrics = metadata.get("metrics", {})
