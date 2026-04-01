@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import sys
 
+import pandas as pd
 import streamlit as st
 
 # Ensure absolute package imports work when Streamlit runs modules directly.
@@ -64,3 +65,17 @@ def heatmap_matrix():
 @st.cache_data
 def bias_table():
     return detect_reporting_bias(get_bundle())
+
+
+@st.cache_data
+def feature_importance_table() -> pd.DataFrame:
+    metadata = get_model_metadata()
+    rows = metadata.get("feature_importance", [])
+    if not rows:
+        return pd.DataFrame(columns=["feature", "regressor_importance", "classifier_importance", "avg_importance"])
+
+    importance_df = pd.DataFrame(rows)
+    for col in ["regressor_importance", "classifier_importance", "avg_importance"]:
+        if col in importance_df.columns:
+            importance_df[col] = pd.to_numeric(importance_df[col], errors="coerce").fillna(0.0)
+    return importance_df

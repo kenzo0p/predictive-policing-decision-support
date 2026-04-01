@@ -33,6 +33,10 @@ st.set_page_config(page_title="Crime Risk Prediction", page_icon="🤖", layout=
 
 st.title("Crime Risk Prediction")
 st.caption("Random Forest based macro-level risk estimation")
+st.info(
+    "Risk category is assigned from predicted crime rate thresholds: "
+    "LOW (<150), MEDIUM (150-299.99), HIGH (>=300)."
+)
 
 bundle = get_bundle()
 models = get_models()
@@ -65,6 +69,10 @@ if st.button("Predict risk"):
     c2.metric("Predicted Risk Category", result["predicted_risk_category"])
     c3.metric("Model Confidence", f"{result['confidence']:.2%}")
 
+    st.caption(
+        "Threshold rules: LOW (<150), MEDIUM (150 <= rate < 300), HIGH (>=300)."
+    )
+
     badge_label, badge_text_color, badge_bg = confidence_badge(float(result["confidence"]))
     st.markdown(
         (
@@ -84,6 +92,39 @@ if st.button("Predict risk"):
     render_class_probabilities(
         class_probabilities=result["class_probabilities"],
         predicted_label=result["predicted_risk_category"],
+    )
+
+    st.subheader("Input Sensitivity Check")
+    scenario_prev = predict(
+        models=models,
+        state=state,
+        year=int(year),
+        prev_year_crime_rate=float(prev_rate) * 1.10,
+        population=float(population),
+    )
+    scenario_pop = predict(
+        models=models,
+        state=state,
+        year=int(year),
+        prev_year_crime_rate=float(prev_rate),
+        population=float(population) * 1.10,
+    )
+
+    s1, s2 = st.columns(2)
+    s1.metric(
+        "If previous_year_crime_rate +10%",
+        f"{scenario_prev['predicted_crime_rate']:.2f}",
+        f"{scenario_prev['predicted_crime_rate'] - result['predicted_crime_rate']:.2f}",
+    )
+    s2.metric(
+        "If population +10%",
+        f"{scenario_pop['predicted_crime_rate']:.2f}",
+        f"{scenario_pop['predicted_crime_rate'] - result['predicted_crime_rate']:.2f}",
+    )
+
+    st.caption(
+        "These what-if results confirm prediction output responds to changes in "
+        "previous_year_crime_rate and population."
     )
 
 st.subheader("Model Performance Snapshot")

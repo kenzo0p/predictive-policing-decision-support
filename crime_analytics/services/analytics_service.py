@@ -159,6 +159,12 @@ def build_model_table(bundle: DataBundle) -> pd.DataFrame:
     model_df = bundle.state_year_data.copy()
     model_df = model_df.sort_values(["state", "year"])
 
+    # Feature engineering for model training.
+    model_df["previous_year_crime_rate"] = model_df.groupby("state")["crime_rate"].shift(1)
+    model_df["previous_year_crime_rate"] = model_df["previous_year_crime_rate"].fillna(model_df["crime_rate"])
+    model_df["crime_rate_growth"] = model_df["crime_rate"] - model_df["previous_year_crime_rate"]
+    model_df["crime_rate_growth"] = model_df["crime_rate_growth"].fillna(0.0)
+
     # When crime_rate has little/no variance (e.g., missing population fallback),
     # derive risk buckets from total_crimes to avoid collapsing to a single class.
     score = model_df["crime_rate"]

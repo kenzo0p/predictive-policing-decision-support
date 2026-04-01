@@ -17,6 +17,7 @@ class PredictionResponse(BaseModel):
     predicted_risk_category: str
     confidence: float
     class_probabilities: Dict[str, float]
+    risk_thresholds: Dict[str, str]
     is_uncertain: bool
     uncertainty_reason: Optional[str] = None
 
