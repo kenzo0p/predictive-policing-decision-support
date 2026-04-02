@@ -116,6 +116,10 @@ def train_and_save(bundle: DataBundle, model_dir: str = "models") -> TrainResult
         "regressor": reg_model,
         "classifier": cls_model,
         "feature_anchors": feature_anchors,
+        "data_year_bounds": {
+            "min": int(model_df["year"].min()),
+            "max": int(model_df["year"].max()),
+        },
     }
 
     output_dir = Path(model_dir)
@@ -192,10 +196,17 @@ def predict(
     previous_year_crime_rate: Optional[float] = None,
     crime_rate_growth: Optional[float] = None,
     uncertainty_threshold: float = 0.6,
+    state_history: Optional[pd.DataFrame] = None,
+    dataset_max_year: Optional[int] = None,
+    forecast_horizon: int = 3,
+    include_forecast_trend: bool = True,
 ) -> Dict[str, float | str]:
     feature_anchors = models.get("feature_anchors", {})
     anchor_prev = float(feature_anchors.get("previous_year_crime_rate_median", 0.0))
     anchor_pop = float(feature_anchors.get("population_median", 1.0))
+    year_bounds = models.get("data_year_bounds", {})
+    max_year = dataset_max_year if dataset_max_year is not None else year_bounds.get("max")
+    max_year = int(max_year) if max_year is not None else None
 
     prev_rate = previous_year_crime_rate
     if prev_rate is None:
@@ -240,16 +251,33 @@ def predict(
     class_probabilities = {classes[i]: float(probabilities[i]) for i in range(len(classes))}
     confidence = float(class_probabilities.get(risk_category, np.max(probabilities)))
 
+    prediction_type = "Forecast Prediction" if max_year is not None and int(year) > max_year else "Historical Prediction"
+    forecast_trend: list[dict[str, float | int | str]] = []
+    if include_forecast_trend and state_history is not None and forecast_horizon > 0:
+        forecast_trend = build_forecast_trend(
+            models=models,
+            state_history=state_history,
+            state=state,
+            start_year=int(year),
+            population=float(population),
+            dataset_max_year=max_year,
+            horizon=forecast_horizon,
+        )
+
     return {
         "predicted_crime_rate": crime_rate,
         "predicted_risk_category": risk_category,
         "confidence": confidence,
+        "prediction_type": prediction_type,
+        "is_forecast": prediction_type == "Forecast Prediction",
+        "dataset_max_year": max_year,
         "class_probabilities": class_probabilities,
         "risk_thresholds": {
             "LOW": "crime_rate < 150",
             "MEDIUM": "150 <= crime_rate < 300",
             "HIGH": "crime_rate >= 300",
         },
+        "forecast_trend": forecast_trend,
         "is_uncertain": confidence < uncertainty_threshold,
         "uncertainty_reason": (
             (
@@ -260,3 +288,67 @@ def predict(
             else None
         ),
     }
+
+
+def build_forecast_trend(
+    models: Dict[str, Pipeline],
+    state_history: pd.DataFrame,
+    state: str,
+    start_year: int,
+    population: float,
+    dataset_max_year: Optional[int] = None,
+    horizon: int = 3,
+) -> list[dict[str, float | int | str]]:
+    state_df = state_history[state_history["state"].astype(str).str.lower() == state.lower()].copy()
+    if state_df.empty:
+        return []
+
+    state_df = state_df.sort_values("year")
+    trend_column = None
+    for candidate in ("previous_year_crime_rate", "prev_year_crime_rate", "crime_rate"):
+        if candidate in state_df.columns:
+            trend_column = candidate
+            break
+
+    if trend_column is None:
+        return []
+
+    trend_df = state_df[["year", trend_column]].copy()
+    trend_df[trend_column] = pd.to_numeric(trend_df[trend_column], errors="coerce")
+    if "crime_rate" in state_df.columns:
+        trend_df[trend_column] = trend_df[trend_column].fillna(pd.to_numeric(state_df["crime_rate"], errors="coerce"))
+    trend_df = trend_df.dropna(subset=["year", trend_column])
+    if trend_df.empty:
+        return []
+
+    if len(trend_df) >= 2:
+        slope, intercept = np.polyfit(trend_df["year"].astype(float), trend_df[trend_column].astype(float), 1)
+    else:
+        slope = 0.0
+        intercept = float(trend_df[trend_column].iloc[-1])
+
+    forecast_rows: list[dict[str, float | int | str]] = []
+    for step in range(1, horizon + 1):
+        forecast_year = int(start_year) + step
+        projected_prev_rate = max(0.0, float(slope * (forecast_year - 1) + intercept))
+        forecast_output = predict(
+            models=models,
+            state=state,
+            year=forecast_year,
+            population=population,
+            prev_year_crime_rate=projected_prev_rate,
+            previous_year_crime_rate=projected_prev_rate,
+            dataset_max_year=dataset_max_year,
+            forecast_horizon=0,
+            include_forecast_trend=False,
+        )
+        forecast_rows.append(
+            {
+                "year": forecast_year,
+                "projected_previous_year_crime_rate": projected_prev_rate,
+                "predicted_crime_rate": float(forecast_output["predicted_crime_rate"]),
+                "prediction_type": str(forecast_output["prediction_type"]),
+            }
+        )
+
+    return forecast_rows

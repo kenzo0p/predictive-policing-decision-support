@@ -99,12 +99,15 @@ def analytics_bias() -> list[dict]:
 @app.post("/predict", response_model=PredictionResponse)
 def predict_crime_risk(request: PredictionRequest) -> PredictionResponse:
     models = _get_models()
+    bundle = _get_bundle()
     output = predict(
         models=models,
         state=request.state,
         year=request.year,
         prev_year_crime_rate=request.prev_year_crime_rate,
         population=request.population,
+        state_history=bundle.state_year_data,
+        dataset_max_year=int(bundle.state_year_data["year"].max()),
     )
 
     save_prediction(request.model_dump(), output)
